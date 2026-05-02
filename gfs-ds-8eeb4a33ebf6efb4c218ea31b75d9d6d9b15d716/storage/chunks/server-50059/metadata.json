@@ -1,0 +1,47 @@
+{
+    "chunks": {
+        "16ce068d-99c3-49d9-86b2-0482324c8a3d": {
+            "Size": 13,
+            "LastModified": "2026-04-19T01:29:15.98741+05:30",
+            "Checksum": 3958822524,
+            "Version": 13
+        },
+        "3512b1ed-32bd-43e4-ab83-955e48bdb1c9": {
+            "Size": 7,
+            "LastModified": "2026-04-19T01:16:57.492339+05:30",
+            "Checksum": 1996738226,
+            "Version": 2
+        },
+        "45a751fd-1887-4a28-8f48-a577c8a1fd6c": {
+            "Size": 6,
+            "LastModified": "2026-04-19T02:36:12.060801+05:30",
+            "Checksum": 3966666328,
+            "Version": 18
+        },
+        "4cb2308b-ebf0-43bd-bac6-369514b0e985": {
+            "Size": 8,
+            "LastModified": "2026-04-19T02:13:10.259025+05:30",
+            "Checksum": 2643716783,
+            "Version": 36
+        },
+        "a8a2ef22-a3a4-42ac-b327-7e6843f2885b": {
+            "Size": 13,
+            "LastModified": "2026-04-19T02:41:30.654616+05:30",
+            "Checksum": 2409769114,
+            "Version": 0
+        },
+        "f28a4c83-cabf-467e-9c73-49560220ee9b": {
+            "Size": 6,
+            "LastModified": "2026-04-19T01:40:08.522518+05:30",
+            "Checksum": 503741888,
+            "Version": 13
+        },
+        "f5eeb670-bd77-49d0-9eac-67fb30d0861e": {
+            "Size": 5,
+            "LastModified": "2026-04-19T02:36:12.060597+05:30",
+            "Checksum": 2510291816,
+            "Version": 22
+        }
+    },
+    "last_checkpoint": "2026-04-19T02:46:06.938775+05:30"
+}

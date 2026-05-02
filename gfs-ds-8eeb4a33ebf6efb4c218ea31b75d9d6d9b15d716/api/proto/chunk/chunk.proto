@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package gfs.chunk;
+
+option go_package = "github.com/Mit-Vin/GFS-Distributed-Systems/api/proto/chunk";
+
+import "api/proto/common/common.proto";
+
+service ChunkService {
+    rpc PushData (stream DataChunk) returns (PushDataResponse);
+    rpc ForwardWriteChunk (ForwardWriteRequest) returns (ForwardWriteResponse);
+    rpc ForwardAppendChunkPhaseOne (ForwardAppendRequest) returns (ForwardWriteResponse);
+    rpc ForwardAppendChunkPhaseTwo (ForwardAppendRequest) returns (ForwardWriteResponse);
+    rpc ForwardAppendChunkNullify (ForwardAppendRequest) returns (ForwardWriteResponse);
+    rpc ForwardReplicateChunk (ForwardReplicateChunkRequest) returns (ForwardReplicateChunkResponse);
+}
+
+// Messages for pushing data between chunk servers
+message DataChunk {
+    string operation_id = 1;
+    string chunk_handle = 2;
+    int64 offset = 3;
+    bytes data = 4;
+    uint32 checksum = 5;
+}
+
+message PushDataResponse {
+    common.Status status = 1;
+}
+
+// Messages for forwarding write request to secondary chunk servers
+message ForwardWriteRequest {
+    string operation_id = 1;
+    common.ChunkHandle chunk_handle = 2;
+    int64 offset = 3;
+    int32 version = 4;
+}
+
+message ForwardAppendRequest {
+    string operation_id = 1;
+    string idempotentency_id = 2;
+    common.ChunkHandle chunk_handle = 3;
+    int64 offset = 4;
+    int32 version = 5;
+}
+
+message ForwardWriteResponse {
+    common.Status status = 1;
+}
+
+message ForwardReplicateChunkRequest {
+    common.ChunkHandle chunk_handle = 1;
+    bytes data = 2;
+    uint32 checksum = 3;
+    int32 version = 4;
+}
+
+message ForwardReplicateChunkResponse {
+    common.Status status = 1;
+}

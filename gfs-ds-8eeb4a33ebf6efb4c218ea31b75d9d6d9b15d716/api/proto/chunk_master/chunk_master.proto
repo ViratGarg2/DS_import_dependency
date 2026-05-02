@@ -1,0 +1,72 @@
+syntax = "proto3";
+package gfs.chunk_master;
+
+option go_package = "github.com/Mit-Vin/GFS-Distributed-Systems/api/proto/chunk_master";
+
+import "api/proto/common/common.proto";
+
+service ChunkMasterService {
+    // For reporting all the hosted chunks to the master on (chunk server) startup
+    rpc ReportChunk(ReportChunkRequest) returns (stream ReportChunkResponse) {}
+    rpc RequestLease(RequestLeaseRequest) returns (RequestLeaseResponse) {}
+    rpc HeartBeat(stream HeartBeatRequest) returns (stream HeartBeatResponse) {}
+}
+
+message ReportChunkRequest {
+    string server_id = 1;
+    string server_address = 2;
+    repeated common.ChunkHandle chunks = 3;
+}
+
+message ReportChunkResponse {
+    common.Status status = 1;
+    ChunkCommand command = 2;
+}
+
+message RequestLeaseRequest {
+    common.ChunkHandle chunk_handle = 1;
+    string server_id = 2;
+}
+
+message RequestLeaseResponse {
+    common.Status status = 1;
+    bool granted = 2;
+    int64 lease_expiration = 3;
+    int32 version = 4;
+}
+
+message ChunkStatus {
+    common.ChunkHandle chunk_handle = 1;
+    int32 version = 2;
+    int64 size = 3;
+}
+
+message HeartBeatRequest {
+    string server_id = 1;
+    string server_address = 2;
+    string timestamp = 3;
+    repeated ChunkStatus chunks = 4;
+    int64 available_space = 5;
+    double cpu_usage = 6;
+    int32 active_operations = 7;
+}
+
+message HeartBeatResponse {
+    common.Status status = 1;
+    repeated ChunkCommand commands = 2;
+}
+
+message ChunkCommand {
+    enum CommandType {
+        NONE = 0;
+        BECOME_PRIMARY = 1;
+        REPLICATE = 2;
+        DELETE = 3;
+        INIT_EMPTY = 4;
+        UPDATE_VERSION = 5;
+    }
+    CommandType type = 1;
+    common.ChunkHandle chunk_handle = 2;
+    repeated common.ChunkLocation target_locations = 3;
+    int32 version = 4;
+}
