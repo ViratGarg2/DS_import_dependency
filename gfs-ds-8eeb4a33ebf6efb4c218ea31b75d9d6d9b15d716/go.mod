@@ -13,6 +13,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+// When building inside environments that attempt to fetch module paths
+// from VCS (e.g., docker image builds), force local resolution to avoid
+// attempts to fetch github.com/Mit-Vin/GFS-Distributed-Systems remotely.
+replace github.com/Mit-Vin/GFS-Distributed-Systems => ./
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

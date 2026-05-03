@@ -32,4 +32,13 @@ command to run docker images-> docker compose up -d --build
 docker compose exec client /usr/local/bin/gfs-client --config /app/configs/docker/client-config.yml
 
 
+command to run on multiple device:
+docker compose -f docker-compose.yml up -d --build master
+
+command to run client iunteractively using docker
+docker exec -it gfs-client /usr/local/bin/gfs-client
+--config /app/configs/docker/client-config.yml
+
+command to get ip:
+ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}'
 

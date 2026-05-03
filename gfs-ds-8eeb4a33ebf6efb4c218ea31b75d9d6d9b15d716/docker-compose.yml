@@ -6,11 +6,13 @@ services:
     container_name: gfs-master
     command: ["/usr/local/bin/gfs-master", "--config", "/app/configs/docker/general-config.yml"]
     ports:
-      - "50051:50051"
+      - "${GFS_MASTER_PORT:-50051}:50051"
     volumes:
       - master-data:/app/storage/master
     networks:
       - gfsnet
+    environment:
+      - GFS_MODE=${GFS_MODE:-docker}
 
   chunk1:
     build:
@@ -25,18 +27,22 @@ services:
         "--config",
         "/app/configs/docker/chunkserver-config.yml",
         "--host",
-        "chunk1",
+        "${GFS_CHUNK1_HOST:-chunk1}",
         "--listen-host",
         "0.0.0.0",
         "--port",
-        "8080"
+        "${GFS_CHUNK1_PORT:-8080}"
       ]
     ports:
-      - "8080:8080"
+      - "${GFS_CHUNK1_PORT:-8080}:${GFS_CHUNK1_PORT:-8080}"
     volumes:
       - chunk1-data:/app/storage/chunks
     networks:
       - gfsnet
+    environment:
+      - GFS_MODE=${GFS_MODE:-docker}
+      - GFS_CHUNK1_HOST=${GFS_CHUNK1_HOST:-chunk1}
+      - GFS_CHUNK1_PORT=${GFS_CHUNK1_PORT:-8080}
 
   chunk2:
     build:
@@ -51,18 +57,22 @@ services:
         "--config",
         "/app/configs/docker/chunkserver-config.yml",
         "--host",
-        "chunk2",
+        "${GFS_CHUNK2_HOST:-chunk2}",
         "--listen-host",
         "0.0.0.0",
         "--port",
-        "8080"
+        "${GFS_CHUNK2_PORT:-8081}"
       ]
     ports:
-      - "8081:8080"
+      - "${GFS_CHUNK2_PORT:-8081}:${GFS_CHUNK2_PORT:-8081}"
     volumes:
       - chunk2-data:/app/storage/chunks
     networks:
       - gfsnet
+    environment:
+      - GFS_MODE=${GFS_MODE:-docker}
+      - GFS_CHUNK2_HOST=${GFS_CHUNK2_HOST:-chunk2}
+      - GFS_CHUNK2_PORT=${GFS_CHUNK2_PORT:-8081}
 
   client:
     build:

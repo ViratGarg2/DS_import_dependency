@@ -1,0 +1,30 @@
+connection:
+  master:
+    host: "10.236.97.159"  # Replace with your GFS server IP
+    port: 50051
+    timeout: 30
+  max_retries: 3
+  retry_interval: 1  # seconds
+  request_timeout: 60  # seconds
+
+cache:
+  chunk_location:
+    enabled: true
+    size: 1000  # number of entries
+    ttl: 60    # seconds
+  metadata:
+    enabled: true
+    size: 10000  # number of entries
+    ttl: 600     # seconds
+
+operation:
+  chunk:
+    read_size: 1048576    # 1MB
+    write_size: 1048576   # 1MB
+    verify_writes: true
+  retries:
+    max_attempts: 3
+    backoff_base: 2
+  timeouts:
+    read: 30    # seconds
+    write: 60   # seconds
