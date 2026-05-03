@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -11,8 +12,11 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "../../configs/general-config.yml", "Path to master configuration file")
+	flag.Parse()
+
 	// Load server configuration
-	config, err := master.LoadConfig("../../configs/general-config.yml")
+	config, err := master.LoadConfig(*configPath)
 	if err != nil {
 		log.Fatalf("Failed to load configuration file: %v", err)
 	}

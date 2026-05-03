@@ -1,0 +1,90 @@
+services:
+  master:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gfs-master
+    command: ["/usr/local/bin/gfs-master", "--config", "/app/configs/docker/general-config.yml"]
+    ports:
+      - "50051:50051"
+    volumes:
+      - master-data:/app/storage/master
+    networks:
+      - gfsnet
+
+  chunk1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gfs-chunk1
+    depends_on:
+      - master
+    command:
+      [
+        "/usr/local/bin/gfs-chunkserver",
+        "--config",
+        "/app/configs/docker/chunkserver-config.yml",
+        "--host",
+        "chunk1",
+        "--listen-host",
+        "0.0.0.0",
+        "--port",
+        "8080"
+      ]
+    ports:
+      - "8080:8080"
+    volumes:
+      - chunk1-data:/app/storage/chunks
+    networks:
+      - gfsnet
+
+  chunk2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gfs-chunk2
+    depends_on:
+      - master
+    command:
+      [
+        "/usr/local/bin/gfs-chunkserver",
+        "--config",
+        "/app/configs/docker/chunkserver-config.yml",
+        "--host",
+        "chunk2",
+        "--listen-host",
+        "0.0.0.0",
+        "--port",
+        "8080"
+      ]
+    ports:
+      - "8081:8080"
+    volumes:
+      - chunk2-data:/app/storage/chunks
+    networks:
+      - gfsnet
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gfs-client
+    depends_on:
+      - master
+      - chunk1
+      - chunk2
+    command: ["sleep", "infinity"]
+    stdin_open: true
+    tty: true
+    networks:
+      - gfsnet
+
+networks:
+  gfsnet:
+    driver: bridge
+
+volumes:
+  master-data:
+  chunk1-data:
+  chunk2-data:
+

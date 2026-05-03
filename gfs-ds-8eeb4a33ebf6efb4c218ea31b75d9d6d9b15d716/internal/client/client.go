@@ -113,6 +113,23 @@ func (c *Client) Delete(ctx context.Context, filename string) error {
 	return nil
 }
 
+func (c *Client) ListNamespace(ctx context.Context, includeTrash bool) ([]*client_pb.NamespaceEntry, error) {
+	req := &client_pb.ListNamespaceRequest{
+		IncludeTrash: includeTrash,
+	}
+
+	resp, err := c.client.ListNamespace(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list namespace: %v", err)
+	}
+
+	if resp.Status.Code != common_pb.Status_OK {
+		return nil, fmt.Errorf("list namespace failed: %s", resp.Status.Message)
+	}
+
+	return resp.Entries, nil
+}
+
 func (c *Client) GetChunkInfo(ctx context.Context, filename string, startIndex, endIndex int64) (map[int64]*client_pb.ChunkInfo, error) {
 	results := make(map[int64]*client_pb.ChunkInfo)
 

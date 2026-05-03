@@ -25,6 +25,7 @@ type ChunkServer struct {
 	// Server identification
 	serverID string
 	address  string
+	listen   string
 
 	config *Config
 

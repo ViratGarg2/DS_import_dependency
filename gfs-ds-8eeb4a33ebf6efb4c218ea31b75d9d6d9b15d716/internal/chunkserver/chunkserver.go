@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func NewChunkServer(serverID, address string, config *Config) (*ChunkServer, error) {
+func NewChunkServer(serverID, listenAddress, advertisedAddress string, config *Config) (*ChunkServer, error) {
 	serverDir := filepath.Join(config.Server.DataDir, serverID)
 	if err := os.MkdirAll(serverDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create server directory: %v", err)
@@ -29,7 +29,7 @@ func NewChunkServer(serverID, address string, config *Config) (*ChunkServer, err
 		return nil, fmt.Errorf("failed to connect to master: %v", err)
 	}
 
-	lis, err := net.Listen("tcp", address)
+	lis, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen: %v", err)
 	}
@@ -38,7 +38,8 @@ func NewChunkServer(serverID, address string, config *Config) (*ChunkServer, err
 
 	cs := &ChunkServer{
 		serverID:               serverID,
-		address:                address,
+		address:                advertisedAddress,
+		listen:                 listenAddress,
 		config:                 config,
 		dataDir:                config.Server.DataDir,
 		serverDir:              serverDir,

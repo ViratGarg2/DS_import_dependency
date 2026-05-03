@@ -1,0 +1,44 @@
+connection:
+  master:
+    host: "master"
+    port: 50051
+    timeout: 30
+  max_retries: 3
+  retry_interval: 1
+  request_timeout: 60
+
+cache:
+  chunk_location:
+    enabled: true
+    size: 1000
+    ttl: 60
+  metadata:
+    enabled: true
+    size: 10000
+    ttl: 600
+
+operation:
+  chunk:
+    read_size: 1048576
+    write_size: 1048576
+    verify_writes: true
+  retries:
+    max_attempts: 3
+    backoff_base: 2
+  timeouts:
+    read: 30
+    write: 60
+    delete: 30
+
+logging:
+  level: "info"
+  format: "json"
+  directory: "/tmp/gfs-client"
+  max_size: 100
+  max_files: 5
+
+monitoring:
+  enabled: false
+  update_interval: 60
+  metrics_port: 9090
+

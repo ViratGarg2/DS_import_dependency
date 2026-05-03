@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	client_pb "github.com/Mit-Vin/GFS-Distributed-Systems/api/proto/client_master"
 	"github.com/Mit-Vin/GFS-Distributed-Systems/internal/client"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -191,6 +193,10 @@ func processCommand(input string) bool {
 		data := strings.Join(args[2:], " ")
 		handlePushData(ctx, args[1], data)
 
+	case "ls":
+		includeTrash := len(args) > 1 && (args[1] == "-a" || args[1] == "--all")
+		handleListNamespace(ctx, includeTrash)
+
 	default:
 		color.Red("Unknown command: %s", cmd)
 	}
@@ -209,7 +215,7 @@ func printHelp() {
 	fmt.Println("  writefile <gfs_filename> <offset> <local_filepath> - Write file contents from local file")
 	fmt.Println("  chunks <filename> <start_chunk> <end_chunk> - Get chunk information")
 	fmt.Println("  push <chunk_handle> <data>                  - Push data to a chunk")
-	fmt.Println("  ls                                          - List all files")
+	fmt.Println("  ls [-a|--all]                               - List namespace as a tree")
 	fmt.Println("  help                                        - Show this help")
 	fmt.Println("  exit                                        - Exit the shell")
 }
@@ -319,4 +325,112 @@ func handlePushData(ctx context.Context, chunkHandle string, data string) {
 	}
 	color.Green("OperationId: %s", operationId)
 	color.Green("Data pushed successfully to chunk %s", chunkHandle)
+}
+
+type namespaceNode struct {
+	name     string
+	isDir    bool
+	children map[string]*namespaceNode
+}
+
+func handleListNamespace(ctx context.Context, includeTrash bool) {
+	entries, err := gfsClient.ListNamespace(ctx, includeTrash)
+	if err != nil {
+		color.Red("Failed to list namespace: %v", err)
+		return
+	}
+
+	printNamespaceTree(entries)
+}
+
+func printNamespaceTree(entries []*client_pb.NamespaceEntry) {
+	root := &namespaceNode{
+		name:     "/",
+		isDir:    true,
+		children: make(map[string]*namespaceNode),
+	}
+
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		entryPath := strings.TrimSpace(entry.Path)
+		if entryPath == "" || entryPath == "/" {
+			continue
+		}
+
+		trimmedPath := strings.TrimPrefix(entryPath, "/")
+		parts := strings.Split(trimmedPath, "/")
+		current := root
+
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+			isLeaf := i == len(parts)-1
+			child, exists := current.children[part]
+			if !exists {
+				child = &namespaceNode{
+					name:     part,
+					isDir:    !isLeaf || entry.IsDirectory,
+					children: make(map[string]*namespaceNode),
+				}
+				current.children[part] = child
+			}
+			if !isLeaf {
+				child.isDir = true
+			}
+			current = child
+		}
+	}
+
+	fmt.Println("/")
+	children := sortedChildren(root)
+	if len(children) == 0 {
+		fmt.Println("`-- (empty)")
+		return
+	}
+
+	for idx, child := range children {
+		printTreeNode(child, "", idx == len(children)-1)
+	}
+}
+
+func sortedChildren(node *namespaceNode) []*namespaceNode {
+	children := make([]*namespaceNode, 0, len(node.children))
+	for _, child := range node.children {
+		children = append(children, child)
+	}
+
+	sort.Slice(children, func(i, j int) bool {
+		if children[i].isDir != children[j].isDir {
+			return children[i].isDir
+		}
+		return children[i].name < children[j].name
+	})
+	return children
+}
+
+func printTreeNode(node *namespaceNode, prefix string, isLast bool) {
+	connector := "|-- "
+	nextPrefix := prefix + "|   "
+	if isLast {
+		connector = "`-- "
+		nextPrefix = prefix + "    "
+	}
+
+	displayName := node.name
+	if node.isDir {
+		displayName += "/"
+	}
+	fmt.Printf("%s%s%s\n", prefix, connector, displayName)
+
+	if !node.isDir {
+		return
+	}
+
+	children := sortedChildren(node)
+	for idx, child := range children {
+		printTreeNode(child, nextPrefix, idx == len(children)-1)
+	}
 }

@@ -12,6 +12,7 @@ service ClientMasterService {
     rpc CreateFile(CreateFileRequest) returns (CreateFileResponse) {}
     rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse) {}
     rpc RenameFile(RenameFileRequest) returns (RenameFileResponse) {}
+    rpc ListNamespace(ListNamespaceRequest) returns (ListNamespaceResponse) {}
 }
 
 message ChunkInfo {
@@ -68,4 +69,18 @@ message RenameFileRequest {
 
 message RenameFileResponse {
     common.Status status = 1;
+}
+
+message ListNamespaceRequest {
+    bool include_trash = 1;
+}
+
+message NamespaceEntry {
+    string path = 1;
+    bool is_directory = 2;
+}
+
+message ListNamespaceResponse {
+    common.Status status = 1;
+    repeated NamespaceEntry entries = 2;
 }

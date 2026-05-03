@@ -1,0 +1,48 @@
+---
+chunk:
+  size: 1048576
+  naming_pattern: "chunk_{id}"
+  checksum_algorithm: "sha256"
+  verify_on_read: true
+
+chunk_server:
+  max_chunks: 1000
+  storage_path: "/app/storage/chunks"
+
+deletion:
+  g_c_interval: 180
+  retention_period: 300
+  g_c_delete_batch_size: 100
+  trash_dir_prefix: "/.trash/"
+
+health:
+  check_interval: 20
+  timeout: 30
+  max_failures: 2
+
+metadata:
+  database:
+    type: "json"
+    path: "/app/storage/master/metadata.json"
+    backup_interval: 30
+  max_filename_length: 255
+  max_directory_depth: 64
+
+lease:
+  lease_timeout: 60
+
+operation_log:
+  path: "/app/storage/master/operation-log.json"
+
+replication:
+  factor: 3
+  timeout: 180
+
+server:
+  host: "0.0.0.0"
+  port: 50051
+  max_connections: 100
+  connection_timeout: 30
+  max_request_size: 104857600
+  thread_pool_size: 50
+

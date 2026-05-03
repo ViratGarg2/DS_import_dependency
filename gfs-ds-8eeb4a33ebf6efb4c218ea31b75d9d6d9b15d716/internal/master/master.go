@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"path"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -785,4 +788,70 @@ func (s *MasterServer) DeleteFile(ctx context.Context, req *client_pb.DeleteFile
 	return &client_pb.DeleteFileResponse{
 		Status: &common_pb.Status{Code: common_pb.Status_OK},
 	}, nil
+}
+
+func (s *MasterServer) ListNamespace(ctx context.Context, req *client_pb.ListNamespaceRequest) (*client_pb.ListNamespaceResponse, error) {
+	_ = ctx
+
+	includeTrash := req.GetIncludeTrash()
+	directorySet := make(map[string]struct{})
+	filePaths := make([]string, 0)
+
+	s.Master.filesMu.RLock()
+	for filename := range s.Master.files {
+		normalizedPath := normalizeNamespacePath(filename)
+		if normalizedPath == "/" {
+			continue
+		}
+
+		if !includeTrash && strings.HasPrefix(normalizedPath, s.Master.Config.Deletion.TrashDirPrefix) {
+			continue
+		}
+
+		filePaths = append(filePaths, normalizedPath)
+		currentDir := path.Dir(normalizedPath)
+		for currentDir != "/" && currentDir != "." {
+			directorySet[currentDir] = struct{}{}
+			currentDir = path.Dir(currentDir)
+		}
+	}
+	s.Master.filesMu.RUnlock()
+
+	directorySet["/"] = struct{}{}
+
+	entries := make([]*client_pb.NamespaceEntry, 0, len(directorySet)+len(filePaths))
+	for dir := range directorySet {
+		entries = append(entries, &client_pb.NamespaceEntry{
+			Path:        dir,
+			IsDirectory: true,
+		})
+	}
+	for _, filePath := range filePaths {
+		entries = append(entries, &client_pb.NamespaceEntry{
+			Path:        filePath,
+			IsDirectory: false,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDirectory != entries[j].IsDirectory {
+			return entries[i].IsDirectory
+		}
+		return entries[i].Path < entries[j].Path
+	})
+
+	return &client_pb.ListNamespaceResponse{
+		Status:  &common_pb.Status{Code: common_pb.Status_OK},
+		Entries: entries,
+	}, nil
+}
+
+func normalizeNamespacePath(filename string) string {
+	trimmed := strings.TrimSpace(filename)
+	trimmed = strings.TrimPrefix(trimmed, "/")
+	normalized := path.Clean("/" + trimmed)
+	if normalized == "." {
+		return "/"
+	}
+	return normalized
 }

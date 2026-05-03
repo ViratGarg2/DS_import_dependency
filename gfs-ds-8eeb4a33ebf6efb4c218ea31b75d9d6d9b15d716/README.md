@@ -28,6 +28,7 @@ Code documentation is available in the `/docs` directory.
 ### Running Instructions
 
 For running this project, take a look at [docs/setup.md](docs/setup.md) and [docs/running.md](docs/running.md).
+For Docker-based multi-node testing on one machine, see [docs/docker.md](docs/docker.md).
 
 ---
 

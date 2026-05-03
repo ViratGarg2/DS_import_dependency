@@ -27,3 +27,9 @@ For rereplication -> initiateReplication()-> master/utils.go, monitorChunkReplic
                     chunckCommand class-> api/proto/chunk_master/chunk_master.proto
                     info about chunck, master, operation logs structure-> internal/master/types.go
 
+
+command to run docker images-> docker compose up -d --build
+docker compose exec client /usr/local/bin/gfs-client --config /app/configs/docker/client-config.yml
+
+
+
