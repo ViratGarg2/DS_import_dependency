@@ -18,7 +18,6 @@ Implements all MVP deliverables from the project proposal: Read, Write, Record A
 5. [Folder Structure](#folder-structure)
 6. [Testing](#testing)
 7. [Benchmarking](#benchmarking)
-8. [Deliverables vs. Proposal](#deliverables-vs-proposal)
 
 ---
 
