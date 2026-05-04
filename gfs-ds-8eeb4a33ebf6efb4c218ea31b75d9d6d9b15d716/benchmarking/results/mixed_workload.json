@@ -1,0 +1,22 @@
+[
+  {
+    "readers": 2,
+    "writers": 2,
+    "read_mbps": 742.4,
+    "write_mbps": 29,
+    "aggregate_mbps": 771.4,
+    "read_bytes": 7784628224,
+    "write_bytes": 304087040,
+    "duration_sec": 10
+  },
+  {
+    "readers": 4,
+    "writers": 4,
+    "read_mbps": 1033.6,
+    "write_mbps": 33.3,
+    "aggregate_mbps": 1066.8999999999999,
+    "read_bytes": 10838081536,
+    "write_bytes": 349175808,
+    "duration_sec": 10
+  }
+]

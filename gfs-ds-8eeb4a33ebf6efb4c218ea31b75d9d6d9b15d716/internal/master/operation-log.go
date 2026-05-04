@@ -56,7 +56,7 @@ func NewOperationLog(logPath, metadataPath string) (*OperationLog, error) {
 	}, nil
 }
 
-func (ol *OperationLog) LogOperation(operation string, filename string, chunkHandle string, metadata interface{}) error {
+func (ol *OperationLog) LogOperation(operation string, filename string, newFilename string, chunkHandle string, metadata interface{}) error {
 	ol.mu.Lock()
 	defer ol.mu.Unlock()
 
@@ -64,6 +64,7 @@ func (ol *OperationLog) LogOperation(operation string, filename string, chunkHan
 		Timestamp:   time.Now(),
 		Operation:   operation,
 		Filename:    filename,
+		NewFilename: newFilename,
 		ChunkHandle: chunkHandle,
 		Metadata:    metadata,
 	}
@@ -77,7 +78,13 @@ func (ol *OperationLog) LogOperation(operation string, filename string, chunkHan
 		return fmt.Errorf("failed to write log entry: %v", err)
 	}
 
-	return ol.writer.Flush()
+	if err := ol.writer.Flush(); err != nil {
+		return fmt.Errorf("failed to flush log entry: %v", err)
+	}
+
+	// fsync: force OS page cache to physical disk before returning to caller.
+	// Without this, a power failure between Flush() and the disk write loses the entry.
+	return ol.logFile.Sync()
 }
 
 func (ol *OperationLog) Close() error {
@@ -110,8 +117,12 @@ func (m *Master) replayOperationLog() error {
 		switch entry.Operation {
 		case OpCreateFile:
 			m.filesMu.Lock()
-			m.files[entry.Filename] = &FileInfo{
-				Chunks: make(map[int64]string),
+			// Idempotent: skip if file already exists (e.g. replaying a log that
+			// overlaps with the checkpoint that was just loaded).
+			if _, exists := m.files[entry.Filename]; !exists {
+				m.files[entry.Filename] = &FileInfo{
+					Chunks: make(map[int64]string),
+				}
 			}
 			m.filesMu.Unlock()
 
@@ -121,12 +132,23 @@ func (m *Master) replayOperationLog() error {
 			m.filesMu.Unlock()
 
 		case OpRenameFile:
-			m.filesMu.Lock()
-			if fileInfo, exists := m.files[entry.Filename]; exists {
-				m.files[entry.NewFilename] = fileInfo
-				delete(m.files, entry.Filename)
+			newFilename := entry.NewFilename
+			if newFilename == "" {
+				// backward compat: old entries stored new_filename inside metadata
+				if md, ok := entry.Metadata.(map[string]interface{}); ok {
+					if nf, ok := md["new_filename"].(string); ok {
+						newFilename = nf
+					}
+				}
 			}
-			m.filesMu.Unlock()
+			if newFilename != "" {
+				m.filesMu.Lock()
+				if fileInfo, exists := m.files[entry.Filename]; exists {
+					m.files[newFilename] = fileInfo
+					delete(m.files, entry.Filename)
+				}
+				m.filesMu.Unlock()
+			}
 
 		case OpAddChunk:
 			metadata, ok := entry.Metadata.(map[string]interface{})
@@ -154,13 +176,19 @@ func (m *Master) replayOperationLog() error {
 			fileIndex := int64(fileIndexFloat)
 
 			m.chunksMu.Lock()
-			m.chunks[entry.ChunkHandle] = &chunkInfo
+			// Idempotent: don't overwrite a chunk that already exists in the
+			// checkpoint with a stale zero-location entry from the log.
+			if _, exists := m.chunks[entry.ChunkHandle]; !exists {
+				m.chunks[entry.ChunkHandle] = &chunkInfo
+			}
 			m.chunksMu.Unlock()
 
-			// Update file's chunk mapping
+			// Update file's chunk mapping (idempotent: same handle, same index)
 			m.filesMu.Lock()
 			if fileInfo, exists := m.files[entry.Filename]; exists {
-				fileInfo.Chunks[fileIndex] = entry.ChunkHandle
+				if _, mapped := fileInfo.Chunks[fileIndex]; !mapped {
+					fileInfo.Chunks[fileIndex] = entry.ChunkHandle
+				}
 			}
 			m.filesMu.Unlock()
 

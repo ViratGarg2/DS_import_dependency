@@ -22,6 +22,29 @@ func (c *Client) cleanupChunkCache(filename string) {
 	}
 }
 
+// invalidateChunkEntry removes a single chunk's cached primary/location so the
+// next operation re-fetches fresh lease info from the master.
+func (c *Client) invalidateChunkEntry(filename string, chunkIndex int64) {
+	c.chunkCacheMu.Lock()
+	defer c.chunkCacheMu.Unlock()
+	cacheKey := fmt.Sprintf("%s-%d", filename, chunkIndex)
+	if entry, ok := c.chunkCache[cacheKey]; ok {
+		delete(c.chunkHandleCache, entry.Info.ChunkHandle.Handle)
+		delete(c.chunkCache, cacheKey)
+	}
+}
+
+// invalidateLastChunkEntry removes the "last-chunk" cache entry for a file.
+func (c *Client) invalidateLastChunkEntry(filename string) {
+	c.chunkCacheMu.Lock()
+	defer c.chunkCacheMu.Unlock()
+	cacheKey := fmt.Sprintf("%s-%v", filename, "last-chunk")
+	if entry, ok := c.chunkCache[cacheKey]; ok {
+		delete(c.chunkHandleCache, entry.Info.ChunkHandle.Handle)
+		delete(c.chunkCache, cacheKey)
+	}
+}
+
 func NewClient(configPath string) (*Client, error) {
 	config, err := LoadConfig(configPath)
 	if err != nil {

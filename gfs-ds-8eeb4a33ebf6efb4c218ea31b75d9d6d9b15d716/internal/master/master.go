@@ -49,17 +49,13 @@ func NewMaster(config *Config) *Master {
 	}
 	m.opLog = opLog
 
-	// Replay operation log
-	if err := m.replayOperationLog(); err != nil {
-		log.Fatalf("Failed to replay operation log: %v", err)
-	}
-
 	// bg processes to monitor leases, check server health and maintenance of replication
 	go m.monitorServerHealth()
 	go m.monitorChunkReplication()
 	go m.cleanupExpiredLeases()
 	go m.runGarbageCollection()
 	go m.runPendingOpsCleanup()
+	go m.monitorOrphanedFiles()
 
 	return m
 }
@@ -327,6 +323,11 @@ func (s *MasterServer) HeartBeat(stream chunk_pb.ChunkMasterService_HeartBeatSer
 			continue
 		}
 
+		// Heartbeat-based namespace reconciliation:
+		// if a file has chunk metadata but no live chunk replicas anywhere,
+		// remove it from namespace metadata so client ls/read don't show stale files.
+		s.Master.cleanupDanglingFileMetadata()
+
 		commands := s.generateChunkCommands(serverId)
 
 		response := &chunk_pb.HeartBeatResponse{
@@ -355,10 +356,8 @@ func (s *MasterServer) CreateChunk(fileInfo *FileInfo, filename string, chunkInd
 	// Generate new chunk handle using UUID
 	chunkHandle := uuid.New().String()
 	log.Printf("Creating for index %d", chunkIndex)
-	fileInfo.Chunks[chunkIndex] = chunkHandle
 
-	s.Master.chunksMu.Lock()
-	// Create new chunk info
+	// Build chunk info struct before any mutation so we can log it first
 	chunkInfo := &ChunkInfo{
 		mu:              sync.RWMutex{},
 		Locations:       make(map[string]bool),
@@ -366,16 +365,21 @@ func (s *MasterServer) CreateChunk(fileInfo *FileInfo, filename string, chunkInd
 		Version:         0,
 		StaleReplicas:   make(map[string]bool),
 	}
-	s.Master.chunks[chunkHandle] = chunkInfo
 
+	// Log before mutating in-memory state
 	metadata := map[string]interface{}{
 		"chunk_info": chunkInfo,
 		"file_index": chunkIndex,
 	}
-
-	if err := s.Master.opLog.LogOperation(OpAddChunk, filename, chunkHandle, metadata); err != nil {
+	if err := s.Master.opLog.LogOperation(OpAddChunk, filename, "", chunkHandle, metadata); err != nil {
 		log.Printf("Failed to log chunk creation: %v", err)
 	}
+
+	// Mutate in-memory state after log is durable
+	fileInfo.Chunks[chunkIndex] = chunkHandle
+
+	s.Master.chunksMu.Lock()
+	s.Master.chunks[chunkHandle] = chunkInfo
 
 	// Select initial servers for this chunk
 	selectedServers := s.selectInitialChunkServers()
@@ -450,7 +454,7 @@ func (s *MasterServer) CreateChunk(fileInfo *FileInfo, filename string, chunkInd
 			s.Master.serversMu.Unlock()
 		}
 
-		if err := s.Master.opLog.LogOperation(OpUpdateChunk, filename, chunkHandle, chunkInfo); err != nil {
+		if err := s.Master.opLog.LogOperation(OpUpdateChunk, filename, "", chunkHandle, chunkInfo); err != nil {
 			log.Printf("Failed to log chunk update: %v", err)
 		}
 		chunkInfo.mu.Unlock()
@@ -545,23 +549,27 @@ func (s *MasterServer) GetFileChunksInfo(ctx context.Context, req *client_pb.Get
 		locations := make([]*common_pb.ChunkLocation, 0)
 		var primaryLocation *common_pb.ChunkLocation
 
-		s.Master.serversMu.Lock()
+		s.Master.serversMu.RLock()
 		if chunkInfo.Primary != "" && time.Now().Before(chunkInfo.LeaseExpiration) {
-			primaryLocation = &common_pb.ChunkLocation{
-				ServerId:      chunkInfo.Primary,
-				ServerAddress: s.Master.servers[chunkInfo.Primary].Address,
+			if server, exists := s.Master.servers[chunkInfo.Primary]; exists && server != nil {
+				primaryLocation = &common_pb.ChunkLocation{
+					ServerId:      chunkInfo.Primary,
+					ServerAddress: server.Address,
+				}
 			}
 		}
 
 		for serverId := range chunkInfo.Locations {
 			if serverId != chunkInfo.Primary {
-				locations = append(locations, &common_pb.ChunkLocation{
-					ServerId:      serverId,
-					ServerAddress: s.Master.servers[serverId].Address,
-				})
+				if server, exists := s.Master.servers[serverId]; exists && server != nil {
+					locations = append(locations, &common_pb.ChunkLocation{
+						ServerId:      serverId,
+						ServerAddress: server.Address,
+					})
+				}
 			}
 		}
-		s.Master.serversMu.Unlock()
+		s.Master.serversMu.RUnlock()
 
 		if primaryLocation == nil {
 			chunkInfo.mu.RUnlock()
@@ -686,11 +694,11 @@ func (s *MasterServer) CreateFile(ctx context.Context, req *client_pb.CreateFile
 		Chunks: make(map[int64]string),
 	}
 
-	s.Master.files[req.Filename] = fileInfo
-
-	if err := s.Master.opLog.LogOperation(OpCreateFile, req.Filename, "", fileInfo); err != nil {
+	if err := s.Master.opLog.LogOperation(OpCreateFile, req.Filename, "", "", nil); err != nil {
 		log.Printf("Failed to log file creation: %v", err)
 	}
+
+	s.Master.files[req.Filename] = fileInfo
 
 	return &client_pb.CreateFileResponse{
 		Status: &common_pb.Status{Code: common_pb.Status_OK},
@@ -737,12 +745,12 @@ func (s *MasterServer) RenameFile(ctx context.Context, req *client_pb.RenameFile
 		}, nil
 	}
 
-	s.Master.files[req.NewFilename] = s.Master.files[req.OldFilename]
-	delete(s.Master.files, req.OldFilename)
-
-	if err := s.Master.opLog.LogOperation(OpRenameFile, req.OldFilename, "", map[string]string{"new_filename": req.NewFilename}); err != nil {
+	if err := s.Master.opLog.LogOperation(OpRenameFile, req.OldFilename, req.NewFilename, "", nil); err != nil {
 		log.Printf("Failed to log file rename: %v", err)
 	}
+
+	s.Master.files[req.NewFilename] = s.Master.files[req.OldFilename]
+	delete(s.Master.files, req.OldFilename)
 
 	return &client_pb.RenameFileResponse{
 		Status: &common_pb.Status{Code: common_pb.Status_OK},
@@ -759,10 +767,6 @@ func (s *MasterServer) DeleteFile(ctx context.Context, req *client_pb.DeleteFile
 		}, nil
 	}
 
-	if err := s.Master.opLog.LogOperation(OpDeleteFile, req.Filename, "", nil); err != nil {
-		log.Printf("Failed to log file deletion: %v", err)
-	}
-
 	s.Master.filesMu.Lock()
 	defer s.Master.filesMu.Unlock()
 
@@ -777,8 +781,12 @@ func (s *MasterServer) DeleteFile(ctx context.Context, req *client_pb.DeleteFile
 	}
 
 	now := time.Now().Format("2006-01-02T15:04:05")
-	trashPath := fmt.Sprintf("%s_%s", req.Filename, now)
-	trashPath = fmt.Sprintf("%s%s", s.Master.Config.Deletion.TrashDirPrefix, trashPath)
+	trashPath := fmt.Sprintf("%s%s_%s", s.Master.Config.Deletion.TrashDirPrefix, req.Filename, now)
+
+	// Log as rename-to-trash so the move is replayed correctly after a restart
+	if err := s.Master.opLog.LogOperation(OpRenameFile, req.Filename, trashPath, "", nil); err != nil {
+		log.Printf("Failed to log file deletion: %v", err)
+	}
 
 	s.Master.files[trashPath] = s.Master.files[req.Filename]
 	delete(s.Master.files, req.Filename)

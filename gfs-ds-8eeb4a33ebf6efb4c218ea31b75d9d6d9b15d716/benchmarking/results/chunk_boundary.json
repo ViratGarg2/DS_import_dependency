@@ -1,0 +1,26 @@
+[
+  {
+    "access_type": "within_chunk_512k",
+    "size_kb": 512,
+    "write_latency_ms": 34.001400000000004,
+    "read_latency_ms": 1.6677999999999997
+  },
+  {
+    "access_type": "cross_boundary_512k",
+    "size_kb": 512,
+    "write_latency_ms": 36.055800000000005,
+    "read_latency_ms": 4.253399999999999
+  },
+  {
+    "access_type": "within_chunk_1m",
+    "size_kb": 1024,
+    "write_latency_ms": 66.5054,
+    "read_latency_ms": 4.284599999999999
+  },
+  {
+    "access_type": "cross_boundary_1m",
+    "size_kb": 1024,
+    "write_latency_ms": 70.4586,
+    "read_latency_ms": 4.007
+  }
+]

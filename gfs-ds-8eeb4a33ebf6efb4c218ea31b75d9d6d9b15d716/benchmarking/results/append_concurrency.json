@@ -1,0 +1,29 @@
+[
+  {
+    "concurrency": 1,
+    "total_appends": 100,
+    "ops_per_sec": 101.27253159007496,
+    "avg_latency_ms": 9.87025,
+    "p50_latency_ms": 8.382,
+    "p99_latency_ms": 30.468,
+    "duration_sec": 0.987434583
+  },
+  {
+    "concurrency": 2,
+    "total_appends": 200,
+    "ops_per_sec": 90.48019934145117,
+    "avg_latency_ms": 18.607264999999988,
+    "p50_latency_ms": 9.958,
+    "p99_latency_ms": 335.531,
+    "duration_sec": 2.2104283750000002
+  },
+  {
+    "concurrency": 3,
+    "total_appends": 300,
+    "ops_per_sec": 104.56823927717765,
+    "avg_latency_ms": 19.99306333333333,
+    "p50_latency_ms": 10.602,
+    "p99_latency_ms": 332.274,
+    "duration_sec": 2.868939958
+  }
+]

@@ -1,0 +1,29 @@
+[
+  {
+    "operation": "Sequential Write",
+    "baseline_mbps": 2163.4777905483065,
+    "gfs_mbps": 14.372888420572274,
+    "baseline_lat_ms": 14.791,
+    "gfs_lat_ms": 2226.414,
+    "throughput_pct": 0.664341851964639,
+    "latency_overhead": 150.5249137989318
+  },
+  {
+    "operation": "Sequential Read",
+    "baseline_mbps": 2490.4661841388433,
+    "gfs_mbps": 421.8574912662316,
+    "baseline_lat_ms": 12.849,
+    "gfs_lat_ms": 75.855,
+    "throughput_pct": 16.938896578999408,
+    "latency_overhead": 5.903572262432874
+  },
+  {
+    "operation": "Random I/O",
+    "baseline_mbps": 2970.532319391635,
+    "gfs_mbps": 4.962428461631298,
+    "baseline_lat_ms": 0.263,
+    "gfs_lat_ms": 157.433,
+    "throughput_pct": 0.167055191732356,
+    "latency_overhead": 598.6045627376425
+  }
+]

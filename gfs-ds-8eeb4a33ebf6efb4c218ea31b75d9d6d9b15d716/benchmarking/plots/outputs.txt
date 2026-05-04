@@ -1,0 +1,59 @@
+=== Benchmark 1: Aggregate Read Throughput ===
+2026/05/04 14:44:38   concurrency = 1
+2026/05/04 14:44:40     472.35 MB/s  (32.0 MB in 0.07s)
+2026/05/04 14:44:40   concurrency = 2
+2026/05/04 14:44:44     846.70 MB/s  (64.0 MB in 0.08s)
+2026/05/04 14:44:44   concurrency = 3
+2026/05/04 14:44:50     1005.07 MB/s  (96.0 MB in 0.10s)
+2026/05/04 14:44:50   concurrency = 4
+2026/05/04 14:44:58     1137.17 MB/s  (128.0 MB in 0.11s)
+2026/05/04 14:44:58   → saved benchmarking/results/read_throughput.json
+2026/05/04 14:44:58 
+=== Benchmark 2: Aggregate Write Throughput ===
+2026/05/04 14:44:58   concurrency = 1
+2026/05/04 14:45:00     17.19 MB/s  (32.0 MB in 1.86s)
+2026/05/04 14:45:00   concurrency = 2
+2026/05/04 14:45:03     22.44 MB/s  (64.0 MB in 2.85s)
+2026/05/04 14:45:03   concurrency = 3
+2026/05/04 14:45:06     26.61 MB/s  (96.0 MB in 3.61s)
+2026/05/04 14:45:06   concurrency = 4
+2026/05/04 14:45:13     18.77 MB/s  (128.0 MB in 6.82s)
+2026/05/04 14:45:13   → saved benchmarking/results/write_throughput.json
+2026/05/04 14:45:13 
+=== Benchmark 3: Record Append Concurrency ===
+2026/05/04 14:45:13   concurrency = 1
+2026/05/04 14:45:14     101.3 ops/s  avg 9.87ms  p99 30.47ms
+2026/05/04 14:45:14   concurrency = 2
+2026/05/04 14:45:16     90.5 ops/s  avg 18.61ms  p99 335.53ms
+2026/05/04 14:45:17   concurrency = 3
+2026/05/04 14:45:19     104.6 ops/s  avg 19.99ms  p99 332.27ms
+2026/05/04 14:45:19   → saved benchmarking/results/append_concurrency.json
+2026/05/04 14:45:19 
+=== Benchmark 4: File Size Impact on Latency ===
+2026/05/04 14:45:19      0.004 MB  write 14.6ms (0.3 MB/s)  read 0.9ms (4.5 MB/s)
+2026/05/04 14:45:19      0.062 MB  write 20.8ms (3.0 MB/s)  read 1.2ms (51.1 MB/s)
+2026/05/04 14:45:19      0.250 MB  write 32.2ms (7.8 MB/s)  read 2.9ms (85.1 MB/s)
+2026/05/04 14:45:20      1.000 MB  write 86.8ms (11.5 MB/s)  read 2.8ms (363.6 MB/s)
+2026/05/04 14:45:20      4.000 MB  write 306.0ms (13.1 MB/s)  read 23.5ms (169.9 MB/s)
+2026/05/04 14:45:22     20.000 MB  write 1987.7ms (10.1 MB/s)  read 51.9ms (385.3 MB/s)
+2026/05/04 14:45:22   → saved benchmarking/results/filesize_latency.json
+2026/05/04 14:45:22 
+=== Benchmark 5: Chunk Boundary Overhead ===
+2026/05/04 14:45:22   within_chunk_512k             write 34.0ms  read 1.7ms
+2026/05/04 14:45:23   cross_boundary_512k           write 36.1ms  read 4.3ms
+2026/05/04 14:45:23   within_chunk_1m               write 66.5ms  read 4.3ms
+2026/05/04 14:45:24   cross_boundary_1m             write 70.5ms  read 4.0ms
+2026/05/04 14:45:24   → saved benchmarking/results/chunk_boundary.json
+2026/05/04 14:45:24 
+=== Benchmark 6: Master Operation Latency ===
+2026/05/04 14:45:26   CreateFile        266 ops/s  avg 3.75ms  p99 8.14ms
+2026/05/04 14:45:26   ListNamespace     1324 ops/s  avg 0.75ms  p99 1.85ms
+2026/05/04 14:45:27   RenameFile        286 ops/s  avg 3.49ms  p99 5.97ms
+2026/05/04 14:45:27   DeleteFile        305 ops/s  avg 3.28ms  p99 4.11ms
+2026/05/04 14:45:29   → saved benchmarking/results/master_latency.json
+2026/05/04 14:45:29 
+=== Benchmark 7: GFS vs Local Filesystem Baseline ===
+2026/05/04 14:45:31   Sequential Write      base 14.8ms (2163.5 MB/s)  gfs 2226.4ms (14.4 MB/s)  overhead 150.5x
+2026/05/04 14:45:31   Sequential Read       base 12.8ms (2490.5 MB/s)  gfs 75.9ms (421.9 MB/s)  overhead 5.9x
+2026/05/04 14:45:31   Random I/O            base 0.3ms (2970.5 MB/s)  gfs 157.4ms (5.0 MB/s)  overhead 598.6x
+2026/05/04 14:45:31   → saved benchmarking/results/comparison.json

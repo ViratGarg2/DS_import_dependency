@@ -1,0 +1,50 @@
+[
+  {
+    "file_size_mb": 0.00390625,
+    "file_size_bytes": 4096,
+    "write_latency_ms": 14.55,
+    "read_latency_ms": 0.862,
+    "write_mbps": 0.26847079037800686,
+    "read_mbps": 4.53161252900232
+  },
+  {
+    "file_size_mb": 0.0625,
+    "file_size_bytes": 65536,
+    "write_latency_ms": 20.793,
+    "read_latency_ms": 1.223,
+    "write_mbps": 3.0058192660991683,
+    "read_mbps": 51.10384300899427
+  },
+  {
+    "file_size_mb": 0.25,
+    "file_size_bytes": 262144,
+    "write_latency_ms": 32.214,
+    "read_latency_ms": 2.938,
+    "write_mbps": 7.760600980939964,
+    "read_mbps": 85.09189925119128
+  },
+  {
+    "file_size_mb": 1,
+    "file_size_bytes": 1048576,
+    "write_latency_ms": 86.781,
+    "read_latency_ms": 2.75,
+    "write_mbps": 11.52325969970385,
+    "read_mbps": 363.6363636363637
+  },
+  {
+    "file_size_mb": 4,
+    "file_size_bytes": 4194304,
+    "write_latency_ms": 306.047,
+    "read_latency_ms": 23.539,
+    "write_mbps": 13.069887958385475,
+    "read_mbps": 169.93075321806364
+  },
+  {
+    "file_size_mb": 20,
+    "file_size_bytes": 20971520,
+    "write_latency_ms": 1987.677,
+    "read_latency_ms": 51.905,
+    "write_mbps": 10.061996994481499,
+    "read_mbps": 385.31933339755324
+  }
+]

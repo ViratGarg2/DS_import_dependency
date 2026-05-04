@@ -1,0 +1,30 @@
+[
+  {
+    "operation": "CreateFile",
+    "total_ops": 200,
+    "ops_per_sec": 266.3300255144165,
+    "avg_latency_ms": 3.754084999999998,
+    "p99_latency_ms": 8.137
+  },
+  {
+    "operation": "ListNamespace",
+    "total_ops": 200,
+    "ops_per_sec": 1324.141583838852,
+    "avg_latency_ms": 0.7546149999999997,
+    "p99_latency_ms": 1.848
+  },
+  {
+    "operation": "RenameFile",
+    "total_ops": 200,
+    "ops_per_sec": 286.1984889924677,
+    "avg_latency_ms": 3.4934250000000016,
+    "p99_latency_ms": 5.973
+  },
+  {
+    "operation": "DeleteFile",
+    "total_ops": 200,
+    "ops_per_sec": 304.8794430462334,
+    "avg_latency_ms": 3.279345000000001,
+    "p99_latency_ms": 4.106
+  }
+]

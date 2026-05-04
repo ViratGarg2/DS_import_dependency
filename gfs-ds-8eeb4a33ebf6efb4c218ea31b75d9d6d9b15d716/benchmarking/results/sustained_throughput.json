@@ -1,0 +1,38 @@
+[
+  {
+    "elapsed_sec": 5.000130208,
+    "throughput_mbps": 7.799796880809549,
+    "total_mb_transferred": 39,
+    "operation": "write"
+  },
+  {
+    "elapsed_sec": 10.000428083,
+    "throughput_mbps": 11.599308971168043,
+    "total_mb_transferred": 97,
+    "operation": "write"
+  },
+  {
+    "elapsed_sec": 15.001556167,
+    "throughput_mbps": 7.598285699095084,
+    "total_mb_transferred": 135,
+    "operation": "write"
+  },
+  {
+    "elapsed_sec": 20.003237583,
+    "throughput_mbps": 0.5997982979090246,
+    "total_mb_transferred": 138,
+    "operation": "write"
+  },
+  {
+    "elapsed_sec": 25.004910333,
+    "throughput_mbps": 0,
+    "total_mb_transferred": 138,
+    "operation": "write"
+  },
+  {
+    "elapsed_sec": 30.006369083,
+    "throughput_mbps": 0,
+    "total_mb_transferred": 138,
+    "operation": "write"
+  }
+]

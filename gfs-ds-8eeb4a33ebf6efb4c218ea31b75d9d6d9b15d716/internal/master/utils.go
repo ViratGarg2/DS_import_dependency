@@ -122,7 +122,37 @@ func (s *MasterServer) updateServerStatus(serverId string, req *chunk_pb.HeartBe
 	s.Master.chunksMu.Lock()
 	defer s.Master.chunksMu.Unlock()
 
+	// HeartBeatRequest carries a snapshot of chunks on this server.
+	// Remove stale master mappings for chunks that are no longer reported.
+	reportedChunks := make(map[string]bool, len(req.Chunks))
 	for _, chunkStatus := range req.Chunks {
+		if chunkStatus == nil || chunkStatus.ChunkHandle == nil {
+			continue
+		}
+		reportedChunks[chunkStatus.ChunkHandle.Handle] = true
+	}
+
+	for existingHandle := range serverInfo.Chunks {
+		if reportedChunks[existingHandle] {
+			continue
+		}
+		if chunkInfo, exists := s.Master.chunks[existingHandle]; exists && chunkInfo != nil {
+			chunkInfo.mu.Lock()
+			delete(chunkInfo.Locations, serverId)
+			delete(chunkInfo.ServerAddresses, serverId)
+			if chunkInfo.Primary == serverId {
+				chunkInfo.Primary = ""
+				chunkInfo.LeaseExpiration = time.Time{}
+			}
+			chunkInfo.mu.Unlock()
+		}
+		delete(serverInfo.Chunks, existingHandle)
+	}
+
+	for _, chunkStatus := range req.Chunks {
+		if chunkStatus == nil || chunkStatus.ChunkHandle == nil {
+			continue
+		}
 		chunkHandle := chunkStatus.ChunkHandle.Handle
 		s.Master.deletedChunksMu.Lock()
 		if _, exists := s.Master.deletedChunks[chunkHandle]; exists {
@@ -132,13 +162,24 @@ func (s *MasterServer) updateServerStatus(serverId string, req *chunk_pb.HeartBe
 		s.Master.deletedChunksMu.Unlock()
 		if _, exists := s.Master.chunks[chunkHandle]; !exists {
 			s.Master.chunks[chunkHandle] = &ChunkInfo{
-				Size:      chunkStatus.Size,
-				Locations: make(map[string]bool),
+				Size:            chunkStatus.Size,
+				Locations:       make(map[string]bool),
+				ServerAddresses: make(map[string]string),
+				StaleReplicas:   make(map[string]bool),
 			}
 		}
 
 		chunkInfo := s.Master.chunks[chunkHandle]
 		chunkInfo.mu.Lock()
+		if chunkInfo.Locations == nil {
+			chunkInfo.Locations = make(map[string]bool)
+		}
+		if chunkInfo.ServerAddresses == nil {
+			chunkInfo.ServerAddresses = make(map[string]string)
+		}
+		if chunkInfo.StaleReplicas == nil {
+			chunkInfo.StaleReplicas = make(map[string]bool)
+		}
 		chunkInfo.Size = chunkStatus.Size
 		chunkInfo.Locations[serverId] = true
 		chunkInfo.ServerAddresses[serverId] = s.Master.servers[serverId].Address
@@ -174,6 +215,7 @@ func (m *Master) handleServerFailure(serverId string) {
 		if chunkInfo, exists := m.chunks[chunkHandle]; exists {
 			chunkInfo.mu.Lock()
 			delete(chunkInfo.Locations, serverId)
+			delete(chunkInfo.ServerAddresses, serverId)
 			if chunkInfo.Primary == serverId {
 				chunkInfo.Primary = ""
 				chunkInfo.LeaseExpiration = time.Time{}
@@ -190,6 +232,90 @@ func (m *Master) handleServerFailure(serverId string) {
 	// Remove server from active servers
 	log.Print("Failure: ", serverId)
 	delete(m.servers, serverId)
+}
+
+// cleanupDanglingFileMetadata removes files whose every chunk has zero locations
+// (i.e. not present on any active chunkserver) and purges the orphaned chunk
+// entries from the master's chunk map.  Caller must ensure this is only invoked
+// after chunkservers have had time to report (see monitorOrphanedFiles).
+func (m *Master) cleanupDanglingFileMetadata() {
+	type orphan struct {
+		filename string
+		handles  []string
+	}
+
+	// Phase 1: collect candidates under read locks — no mutations here.
+	var candidates []orphan
+
+	m.filesMu.RLock()
+	m.chunksMu.RLock()
+	for filename, fileInfo := range m.files {
+		if strings.HasPrefix(filename, m.Config.Deletion.TrashDirPrefix) {
+			continue
+		}
+		if fileInfo == nil {
+			candidates = append(candidates, orphan{filename: filename})
+			continue
+		}
+		fileInfo.mu.RLock()
+		if len(fileInfo.Chunks) == 0 {
+			fileInfo.mu.RUnlock()
+			continue // empty file is valid; keep it
+		}
+		hasLive := false
+		var handles []string
+		for _, h := range fileInfo.Chunks {
+			handles = append(handles, h)
+			chunk := m.chunks[h]
+			if chunk == nil {
+				continue
+			}
+			chunk.mu.RLock()
+			if len(chunk.Locations) > 0 {
+				hasLive = true
+			}
+			chunk.mu.RUnlock()
+			if hasLive {
+				break
+			}
+		}
+		fileInfo.mu.RUnlock()
+		if !hasLive {
+			candidates = append(candidates, orphan{filename: filename, handles: handles})
+		}
+	}
+	m.chunksMu.RUnlock()
+	m.filesMu.RUnlock()
+
+	if len(candidates) == 0 {
+		return
+	}
+
+	// Phase 2: log then delete orphaned file entries.
+	m.filesMu.Lock()
+	for _, o := range candidates {
+		if _, exists := m.files[o.filename]; !exists {
+			continue
+		}
+		if err := m.opLog.LogOperation(OpDeleteFile, o.filename, "", "", nil); err != nil {
+			log.Printf("[OrphanCleanup] Failed to log deletion of %q: %v", o.filename, err)
+		}
+		delete(m.files, o.filename)
+		log.Printf("[OrphanCleanup] Removed file %q — no live replicas on any active chunkserver", o.filename)
+	}
+	m.filesMu.Unlock()
+
+	// Phase 3: log then delete orphaned chunk entries (separate lock to avoid holding both).
+	m.chunksMu.Lock()
+	for _, o := range candidates {
+		for _, h := range o.handles {
+			if err := m.opLog.LogOperation(OpDeleteChunk, o.filename, "", h, nil); err != nil {
+				log.Printf("[OrphanCleanup] Failed to log chunk deletion %q: %v", h, err)
+			}
+			delete(m.chunks, h)
+		}
+	}
+	m.chunksMu.Unlock()
 }
 
 func (m *Master) initiateReplication(chunkHandle string) {
@@ -571,16 +697,18 @@ func (m *Master) sendDeleteChunkCommand(serverId, chunkHandle string) {
 }
 
 func (m *Master) incrementChunkVersion(chunkHandle string, c *ChunkInfo) {
-	c.Version++
+	newVersion := c.Version + 1
 
 	metadata := struct {
 		Version int32 `json:"version"`
 	}{
-		Version: c.Version,
+		Version: newVersion,
 	}
-	if err := m.opLog.LogOperation(OpUpdateChunkVersion, "", chunkHandle, metadata); err != nil {
+	if err := m.opLog.LogOperation(OpUpdateChunkVersion, "", "", chunkHandle, metadata); err != nil {
 		log.Printf("Failed to log chunk version update: %v", err)
 	}
+
+	c.Version = newVersion
 }
 
 // Helper function to schedule updates for stale replicas

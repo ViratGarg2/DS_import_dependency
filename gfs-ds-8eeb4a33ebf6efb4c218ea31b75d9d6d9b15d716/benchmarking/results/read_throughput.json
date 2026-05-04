@@ -1,0 +1,26 @@
+[
+  {
+    "concurrency": 1,
+    "throughput_mbps": 472.3465104478989,
+    "total_mb": 32,
+    "duration_sec": 0.067746875
+  },
+  {
+    "concurrency": 2,
+    "throughput_mbps": 846.7031845340243,
+    "total_mb": 64,
+    "duration_sec": 0.075587291
+  },
+  {
+    "concurrency": 3,
+    "throughput_mbps": 1005.0680977607961,
+    "total_mb": 96,
+    "duration_sec": 0.095515916
+  },
+  {
+    "concurrency": 4,
+    "throughput_mbps": 1137.1721249581235,
+    "total_mb": 128,
+    "duration_sec": 0.112559917
+  }
+]

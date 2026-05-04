@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"strings"
+	"time"
 
 	chunk_ops "github.com/Mit-Vin/GFS-Distributed-Systems/api/proto/chunk_operations"
 	common_pb "github.com/Mit-Vin/GFS-Distributed-Systems/api/proto/common"
@@ -11,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
+
+const opMaxRetries = 3
 
 const ChunkSize = 1 * 1024 * 1024 // 1MB
 
@@ -85,7 +89,6 @@ func (c *Client) Read(ctx context.Context, filename string, offset int64, length
 		}
 
 		chunkOffset := currentOffset % ChunkSize
-
 		bytesToRead := ChunkSize - chunkOffset
 		if bytesToRead > remainingLength {
 			bytesToRead = remainingLength
@@ -100,37 +103,38 @@ func (c *Client) Read(ctx context.Context, filename string, offset int64, length
 			return nil, fmt.Errorf("no available servers for chunk %s", chunkInfo.ChunkHandle.Handle)
 		}
 
-		conn, err := grpc.Dial(serverAddr, grpc.WithInsecure())
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to chunk server: %v", err)
-		}
-		defer conn.Close()
-
-		client := chunk_ops.NewChunkOperationServiceClient(conn)
-
-		readReq := &chunk_ops.ReadChunkRequest{
-			ChunkHandle: chunkInfo.ChunkHandle,
-			Offset:      chunkOffset,
-			Length:      bytesToRead,
+		opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		conn, connErr := grpc.Dial(serverAddr, grpc.WithInsecure())
+		if connErr != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to connect to chunk server: %v", connErr)
 		}
 
-		// Execute read request
-		readResp, err := client.ReadChunk(ctx, readReq)
-		if err != nil {
+		readResp, readErr := chunk_ops.NewChunkOperationServiceClient(conn).ReadChunk(opCtx,
+			&chunk_ops.ReadChunkRequest{
+				ChunkHandle: chunkInfo.ChunkHandle,
+				Offset:      chunkOffset,
+				Length:      bytesToRead,
+			})
+		conn.Close()
+		cancel()
+
+		if readErr != nil {
 			return nil, fmt.Errorf("failed to read from chunk %s: %v",
-				chunkInfo.ChunkHandle.Handle, err)
+				chunkInfo.ChunkHandle.Handle, readErr)
 		}
-
 		if readResp.Status.Code != common_pb.Status_OK {
+			// Chunk written with fewer bytes than expected — treat as EOF.
+			if strings.Contains(readResp.Status.Message, "offset is beyond chunk size") {
+				break
+			}
 			return nil, fmt.Errorf("read chunk failed: %s", readResp.Status.Message)
 		}
 
 		result = append(result, readResp.Data...)
-
 		bytesRead := int64(len(readResp.Data))
 		remainingLength -= bytesRead
 		currentOffset += bytesRead
-
 		if remainingLength <= 0 {
 			break
 		}
@@ -140,7 +144,6 @@ func (c *Client) Read(ctx context.Context, filename string, offset int64, length
 }
 
 func (c *Client) Write(ctx context.Context, filename string, offset int64, data []byte) (int, error) {
-	// Get chunk information from the master
 	startChunk := offset / ChunkSize
 	endChunk := (offset + int64(len(data))) / ChunkSize
 	chunks, err := c.GetChunkInfo(ctx, filename, startChunk, endChunk)
@@ -152,60 +155,97 @@ func (c *Client) Write(ctx context.Context, filename string, offset int64, data 
 	remainingData := data
 	currentOffset := offset
 
-	// Process each chunk
 	for i := startChunk; i <= endChunk; i++ {
 		chunkInfo, ok := chunks[i]
 		if !ok {
 			return totalWritten, fmt.Errorf("chunk info missing for index %d", i)
 		}
 
-		// Calculate the offset within this chunk
 		chunkOffset := currentOffset % ChunkSize
-
 		var chunkData []byte
-		bytesRemaining := ChunkSize - chunkOffset
-		if int64(len(remainingData)) > bytesRemaining {
-			chunkData = remainingData[:bytesRemaining]
-			remainingData = remainingData[bytesRemaining:]
+		if bytesRem := ChunkSize - chunkOffset; int64(len(remainingData)) > bytesRem {
+			chunkData = remainingData[:bytesRem]
+			remainingData = remainingData[bytesRem:]
 		} else {
 			chunkData = remainingData
 			remainingData = nil
 		}
 
-		operationId, err := c.PushDataToPrimary(ctx, chunkInfo.ChunkHandle.Handle, chunkData)
-		if err != nil {
-			return totalWritten, fmt.Errorf("failed to push data to primary for chunk %s: %v",
-				chunkInfo.ChunkHandle.Handle, err)
+		// chunkErr is always set before a continue so it is non-nil when the
+		// loop exhausts all retries via the "not primary" path.
+		var chunkErr error
+		for attempt := 0; attempt < opMaxRetries; attempt++ {
+			opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+
+			operationId, pushErr := c.PushDataToPrimary(opCtx, chunkInfo.ChunkHandle.Handle, chunkData)
+			if pushErr != nil {
+				cancel()
+				chunkErr = fmt.Errorf("push chunk %d: %v", i, pushErr)
+				if strings.Contains(pushErr.Error(), "not primary") {
+					// The master assigned a primary but the BECOME_PRIMARY command
+					// travels async through the ReportChunk stream.  Sleep briefly so
+					// the chunk server has time to process it before we retry.
+					time.Sleep(300 * time.Millisecond)
+					c.invalidateChunkEntry(filename, i)
+					fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
+					if fresh, ferr := c.GetChunkInfo(fetchCtx, filename, i, i); ferr == nil {
+						if fi, fiOk := fresh[i]; fiOk {
+							chunkInfo, chunks[i] = fi, fi
+						}
+					}
+					fetchCancel()
+					continue // chunkErr already set; loop retries
+				}
+				break // non-retryable
+			}
+
+			conn, cerr := grpc.Dial(chunkInfo.PrimaryLocation.ServerAddress, grpc.WithInsecure())
+			if cerr != nil {
+				cancel()
+				chunkErr = fmt.Errorf("dial primary chunk %d: %v", i, cerr)
+				break
+			}
+
+			writeResp, werr := chunk_ops.NewChunkOperationServiceClient(conn).WriteChunk(opCtx,
+				&chunk_ops.WriteChunkRequest{
+					ChunkHandle: chunkInfo.ChunkHandle,
+					Offset:      chunkOffset,
+					Secondaries: chunkInfo.SecondaryLocations,
+					OperationId: operationId,
+				})
+			conn.Close()
+			cancel()
+
+			if werr != nil {
+				chunkErr = fmt.Errorf("write chunk %d: %v", i, werr)
+				break
+			}
+			if writeResp.Status.Code != common_pb.Status_OK {
+				chunkErr = fmt.Errorf("write chunk %d failed: %s", i, writeResp.Status.Message)
+				if strings.Contains(writeResp.Status.Message, "not primary") {
+					time.Sleep(300 * time.Millisecond)
+					c.invalidateChunkEntry(filename, i)
+					fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
+					if fresh, ferr := c.GetChunkInfo(fetchCtx, filename, i, i); ferr == nil {
+						if fi, fiOk := fresh[i]; fiOk {
+							chunkInfo, chunks[i] = fi, fi
+						}
+					}
+					fetchCancel()
+					continue // retry
+				}
+				break // non-retryable write failure
+			}
+
+			chunkErr = nil
+			break // success
 		}
 
-		conn, err := grpc.Dial(chunkInfo.PrimaryLocation.ServerAddress, grpc.WithInsecure())
-		if err != nil {
-			return totalWritten, fmt.Errorf("failed to connect to primary server: %v", err)
+		if chunkErr != nil {
+			return totalWritten, chunkErr
 		}
-		defer conn.Close()
-
-		writeReq := &chunk_ops.WriteChunkRequest{
-			ChunkHandle: chunkInfo.ChunkHandle,
-			Offset:      chunkOffset,
-			Secondaries: chunkInfo.SecondaryLocations,
-			OperationId: operationId,
-		}
-
-		client := chunk_ops.NewChunkOperationServiceClient(conn)
-		writeResp, err := client.WriteChunk(ctx, writeReq)
-		if err != nil {
-			return totalWritten, fmt.Errorf("failed to write chunk %s: %v",
-				chunkInfo.ChunkHandle.Handle, err)
-		}
-
-		if writeResp.Status.Code != common_pb.Status_OK {
-			return totalWritten, fmt.Errorf("write chunk failed: %s", writeResp.Status.Message)
-		}
-
-		bytesWritten := len(chunkData)
-		totalWritten += bytesWritten
-		currentOffset += int64(bytesWritten)
-
+		totalWritten += len(chunkData)
+		currentOffset += int64(len(chunkData))
 		if len(remainingData) == 0 {
 			break
 		}
@@ -219,46 +259,83 @@ func (c *Client) Append(ctx context.Context, filename string, data []byte) (int6
 		return -1, "", fmt.Errorf("data (size: %v) should be less than 1/4th of chunkSize (%v)", int64(len(data)), ChunkSize)
 	}
 
-	chunkInfo, chunkIdx, err := c.GetLastChunkInfo(ctx, filename)
-	if err != nil {
-		return -1, "", fmt.Errorf("failed to get chunk info: %v", err)
+	// maxRollovers bounds how many full-chunk rollovers we allow in one Append call.
+	// Each rollover means the current chunk was full and we advanced to the next one.
+	const maxRollovers = 64
+	primaryMisses := 0
+
+	for rollover := 0; rollover <= maxRollovers; rollover++ {
+		fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
+		chunkInfo, chunkIdx, err := c.GetLastChunkInfo(fetchCtx, filename)
+		fetchCancel()
+		if err != nil {
+			return -1, "", fmt.Errorf("failed to get chunk info: %v", err)
+		}
+
+		opCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+
+		operationId, pushErr := c.PushDataToPrimary(opCtx, chunkInfo.ChunkHandle.Handle, data)
+		if pushErr != nil {
+			cancel()
+			if strings.Contains(pushErr.Error(), "not primary") {
+				primaryMisses++
+				if primaryMisses >= opMaxRetries {
+					return -1, "", fmt.Errorf("push append (not primary after %d retries): %v", opMaxRetries, pushErr)
+				}
+				time.Sleep(300 * time.Millisecond)
+				c.invalidateLastChunkEntry(filename)
+				continue
+			}
+			return -1, "", fmt.Errorf("push append data: %v", pushErr)
+		}
+		primaryMisses = 0 // reset on successful push
+
+		conn, connErr := grpc.Dial(chunkInfo.PrimaryLocation.ServerAddress, grpc.WithInsecure())
+		if connErr != nil {
+			cancel()
+			return -1, "", fmt.Errorf("dial primary: %v", connErr)
+		}
+
+		idempID := uuid.New().String()
+		appendResp, appendErr := chunk_ops.NewChunkOperationServiceClient(conn).RecordAppendChunk(opCtx,
+			&chunk_ops.RecordAppendChunkRequest{
+				ChunkHandle:      chunkInfo.ChunkHandle,
+				Secondaries:      chunkInfo.SecondaryLocations,
+				OperationId:      operationId,
+				IdempotentencyId: idempID,
+			})
+		conn.Close()
+		cancel()
+
+		if appendErr != nil {
+			return -1, "", fmt.Errorf("append RPC: %v; idempotency ID: %v", appendErr, idempID)
+		}
+
+		if appendResp.Status.Code != common_pb.Status_OK {
+			if strings.Contains(appendResp.Status.Message, "not primary") {
+				primaryMisses++
+				if primaryMisses >= opMaxRetries {
+					return -1, "", fmt.Errorf("append (not primary after %d retries): %s", opMaxRetries, appendResp.Status.Message)
+				}
+				time.Sleep(300 * time.Millisecond)
+				c.invalidateLastChunkEntry(filename)
+				continue
+			}
+			if strings.Contains(appendResp.Status.Message, "exceeds maximum chunk size") {
+				// Current chunk is full. Force-allocate the next chunk by writing a
+				// single sentinel byte at its start, then retry the append there.
+				extCtx, extCancel := context.WithTimeout(ctx, 10*time.Second)
+				c.Write(extCtx, filename, (chunkIdx+1)*ChunkSize, []byte{0}) //nolint
+				extCancel()
+				c.invalidateLastChunkEntry(filename)
+				continue // rollover — does NOT count against primaryMisses
+			}
+			return -1, "", fmt.Errorf("append failed: %s", appendResp.Status.Message)
+		}
+
+		return appendResp.OffsetInChunk + ChunkSize*chunkIdx, idempID, nil
 	}
-
-	chunkData := data
-
-	operationId, err := c.PushDataToPrimary(ctx, chunkInfo.ChunkHandle.Handle, chunkData)
-	if err != nil {
-		return -1, "", fmt.Errorf("failed to push append data to primary for chunk %s: %v",
-			chunkInfo.ChunkHandle.Handle, err)
-	}
-
-	conn, err := grpc.Dial(chunkInfo.PrimaryLocation.ServerAddress, grpc.WithInsecure())
-	if err != nil {
-		return -1, "", fmt.Errorf("failed to connect to primary server: %v", err)
-	}
-	defer conn.Close()
-
-	idempID := uuid.New().String() // Generate random idempotency ID
-
-	appendReq := &chunk_ops.RecordAppendChunkRequest{
-		ChunkHandle:      chunkInfo.ChunkHandle,
-		Secondaries:      chunkInfo.SecondaryLocations,
-		OperationId:      operationId,
-		IdempotentencyId: idempID,
-	}
-
-	client := chunk_ops.NewChunkOperationServiceClient(conn)
-	appendResp, err := client.RecordAppendChunk(ctx, appendReq)
-	if err != nil {
-		return -1, "", fmt.Errorf("failed to append to chunk %s: %v; Idempotency ID: <%v>",
-			chunkInfo.ChunkHandle.Handle, err, idempID)
-	}
-
-	if appendResp.Status.Code != common_pb.Status_OK {
-		return -1, "", fmt.Errorf("write chunk failed: %s", appendResp.Status.Message)
-	}
-
-	return appendResp.OffsetInChunk + ChunkSize*chunkIdx, idempID, nil
+	return -1, "", fmt.Errorf("append failed after %d chunk rollovers", maxRollovers)
 }
 
 // Supporting types for write operations
